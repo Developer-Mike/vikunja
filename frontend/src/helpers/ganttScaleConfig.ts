@@ -1,7 +1,7 @@
 import dayjs from 'dayjs'
-import {MILLISECONDS_A_DAY, MILLISECONDS_A_HOUR} from '@/constants/date'
+import {MILLISECONDS_A_DAY, MILLISECONDS_A_HOUR, MILLISECONDS_A_MINUTE} from '@/constants/date'
 
-export type GanttScale = 'day' | 'week'
+export type GanttScale = 'hour' | 'day' | 'week'
 
 export interface GanttScaleConfig {
 	/** Width of one column unit in pixels */
@@ -18,6 +18,56 @@ export interface GanttScaleConfig {
 	snapDate(date: Date, isStart?: boolean): Date
 	/** Number of steps per keyboard arrow press */
 	keyboardSteps: number
+}
+
+// ─── Hour scale: 1 column = 5 minutes ────────────────────────────────────────
+
+const HOUR_STEP_MINUTES = 5
+const HOUR_STEP_MS = HOUR_STEP_MINUTES * MILLISECONDS_A_MINUTE
+const HOUR_UNIT_PX = 15 // pixels per 5-minute slot
+
+const hourScaleConfig: GanttScaleConfig = {
+	unitWidthPixels: HOUR_UNIT_PX,
+
+	getTimeUnits(dateFrom: Date, dateTo: Date): Date[] {
+		const dates: Date[] = []
+		const current = dayjs(dateFrom)
+			.startOf('hour')
+			.minute(Math.floor(dayjs(dateFrom).minute() / HOUR_STEP_MINUTES) * HOUR_STEP_MINUTES)
+			.second(0)
+			.millisecond(0)
+			.toDate()
+		while (current <= dateTo) {
+			dates.push(new Date(current))
+			current.setTime(current.getTime() + HOUR_STEP_MS)
+		}
+		return dates
+	},
+
+	dateToPixels(date: Date, dateFrom: Date): number {
+		const diffMs = date.getTime() - dateFrom.getTime()
+		return (diffMs / HOUR_STEP_MS) * HOUR_UNIT_PX
+	},
+
+	pixelsToSteps(pixels: number): number {
+		// Snap to whole 5-minute steps
+		return Math.round(pixels / HOUR_UNIT_PX)
+	},
+
+	applySteps(date: Date, steps: number): Date {
+		const d = new Date(date)
+		d.setTime(d.getTime() + steps * HOUR_STEP_MS)
+		return d
+	},
+
+	snapDate(date: Date): Date {
+		// Snap to the nearest 5-minute boundary
+		const d = dayjs(date)
+		const snappedMinute = Math.round(d.minute() / HOUR_STEP_MINUTES) * HOUR_STEP_MINUTES
+		return d.minute(snappedMinute).second(0).millisecond(0).toDate()
+	},
+
+	keyboardSteps: 1,
 }
 
 // ─── Day scale: 1 column = 1 hour ───────────────────────────────────────────
@@ -108,6 +158,7 @@ const weekScaleConfig: GanttScaleConfig = {
 }
 
 export const GANTT_SCALE_CONFIGS: Record<GanttScale, GanttScaleConfig> = {
+	hour: hourScaleConfig,
 	day: dayScaleConfig,
 	week: weekScaleConfig,
 }

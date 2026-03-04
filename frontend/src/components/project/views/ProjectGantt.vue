@@ -21,6 +21,9 @@
 					<FormField :label="$t('project.gantt.size')">
 						<div class="select">
 							<select v-model="filters.scale">
+								<option value="hour">
+									{{ $t('project.gantt.hour') }}
+								</option>
 								<option value="day">
 									{{ $t('project.gantt.day') }}
 								</option>

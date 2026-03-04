@@ -4,8 +4,53 @@
 		role="columnheader"
 		:aria-label="$t('project.gantt.timelineHeader')"
 	>
+		<!-- Hour scale: Hour row (upper) + 5-minute row (lower) -->
+		<template v-if="scale === 'hour'">
+			<div
+				class="gantt-timeline-upper"
+				role="row"
+				:aria-label="$t('project.gantt.hoursRow')"
+			>
+				<div
+					v-for="group in hourScaleHourGroups"
+					:key="group.key"
+					class="timeunit-upper"
+					:style="{ width: `${group.width}px` }"
+					role="columnheader"
+					:aria-label="hourIsNow(group.date)
+						? $t('project.gantt.hourLabelNow', { hour: formatHour(group.date) })
+						: $t('project.gantt.hourLabel', { hour: formatHour(group.date) })"
+				>
+					{{ group.label }}
+				</div>
+			</div>
+			<div
+				class="gantt-timeline-lower"
+				role="row"
+				:aria-label="$t('project.gantt.minutesRow')"
+			>
+				<div
+					v-for="date in timelineData"
+					:key="date.toISOString()"
+					class="timeunit"
+					:style="{ width: `${unitWidthPixels}px` }"
+					role="columnheader"
+					:aria-label="minuteIsNow(date)
+						? $t('project.gantt.minuteLabelNow', { minute: formatMinute(date) })
+						: $t('project.gantt.minuteLabel', { minute: formatMinute(date) })"
+				>
+					<div
+						class="timeunit-wrapper"
+						:class="{'today': minuteIsNow(date)}"
+					>
+						<span class="minute-label">{{ formatMinute(date) }}</span>
+					</div>
+				</div>
+			</div>
+		</template>
+
 		<!-- Day scale: Day row (upper) + Hour row (lower) -->
-		<template v-if="scale === 'day'">
+		<template v-else-if="scale === 'day'">
 			<div
 				class="gantt-timeline-upper"
 				role="row"
@@ -140,6 +185,46 @@ function formatHour(date: Date): string {
 	return `${date.getHours()}:00`
 }
 
+function formatMinute(date: Date): string {
+	return `:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+const minuteIsNow = computed(() => {
+	const t = today.value
+	return (date: Date) =>
+		date.getFullYear() === t.getFullYear()
+		&& date.getMonth() === t.getMonth()
+		&& date.getDate() === t.getDate()
+		&& date.getHours() === t.getHours()
+		&& date.getMinutes() <= t.getMinutes()
+		&& date.getMinutes() + 5 > t.getMinutes()
+})
+
+// ── Hour scale: group 5-minute slots by hour ─────────────────────────────────
+
+const hourScaleHourGroups = computed(() => {
+	return props.timelineData.reduce(
+		(groups, date) => {
+			const key = `${date.toDateString()}-${date.getHours()}`
+
+			const lastGroup = groups[groups.length - 1]
+			if (lastGroup?.key === key) {
+				lastGroup.width += props.unitWidthPixels
+			} else {
+				groups.push({
+					key,
+					label: dayjs(date).format('ddd D MMM, H:00'),
+					date: new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours()),
+					width: props.unitWidthPixels,
+				})
+			}
+
+			return groups
+		},
+		[] as Array<{key: string; label: string; date: Date; width: number}>,
+	)
+})
+
 // ── Day scale: group hours by day ────────────────────────────────────────────
 
 const dayScaleDayGroups = computed(() => {
@@ -243,6 +328,10 @@ const weekScaleMonthGroups = computed(() => {
 
 			.hour-label {
 				font-size: 0.75rem;
+			}
+
+			.minute-label {
+				font-size: 0.65rem;
 			}
 		}
 	}

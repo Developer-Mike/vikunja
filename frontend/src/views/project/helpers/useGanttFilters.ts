@@ -17,7 +17,7 @@ import type {DateKebab} from '@/types/DateKebab'
 import type {IProjectView} from '@/modelTypes/IProjectView'
 import type {GanttScale} from '@/helpers/ganttScaleConfig'
 
-const VALID_SCALES: GanttScale[] = ['day', 'week']
+const VALID_SCALES: GanttScale[] = ['hour', 'day', 'week']
 const DEFAULT_SCALE: GanttScale = 'day'
 
 function parseScaleProp(value: string | undefined | null): GanttScale {
