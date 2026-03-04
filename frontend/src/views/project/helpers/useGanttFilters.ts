@@ -15,6 +15,17 @@ import type {TaskFilterParams} from '@/services/taskCollection'
 import type {DateISO} from '@/types/DateISO'
 import type {DateKebab} from '@/types/DateKebab'
 import type {IProjectView} from '@/modelTypes/IProjectView'
+import type {GanttScale} from '@/helpers/ganttScaleConfig'
+
+const VALID_SCALES: GanttScale[] = ['day', 'week']
+const DEFAULT_SCALE: GanttScale = 'day'
+
+function parseScaleProp(value: string | undefined | null): GanttScale {
+	if (value && VALID_SCALES.includes(value as GanttScale)) {
+		return value as GanttScale
+	}
+	return DEFAULT_SCALE
+}
 
 // convenient internal filter object
 export interface GanttFilters {
@@ -23,6 +34,7 @@ export interface GanttFilters {
 	dateFrom: DateISO
 	dateTo: DateISO
 	showTasksWithoutDates: boolean
+	scale: GanttScale
 }
 
 const DEFAULT_SHOW_TASKS_WITHOUT_DATES = false
@@ -49,6 +61,7 @@ function ganttRouteToFilters(route: Partial<RouteLocationNormalized>): GanttFilt
 		dateFrom: parseDateProp(ganttRoute.query?.dateFrom as DateKebab) || getDefaultDateFrom(),
 		dateTo: parseDateProp(ganttRoute.query?.dateTo as DateKebab) || getDefaultDateTo(),
 		showTasksWithoutDates: parseBooleanProp(ganttRoute.query?.showTasksWithoutDates as string) || DEFAULT_SHOW_TASKS_WITHOUT_DATES,
+		scale: parseScaleProp(ganttRoute.query?.scale as string),
 	}
 }
 
@@ -74,6 +87,10 @@ function ganttFiltersToRoute(filters: GanttFilters): RouteLocationRaw {
 
 	if (filters.showTasksWithoutDates) {
 		query.showTasksWithoutDates = String(filters.showTasksWithoutDates)
+	}
+
+	if (filters.scale && filters.scale !== DEFAULT_SCALE) {
+		query.scale = filters.scale
 	}
 
 	return {

@@ -18,6 +18,18 @@
 							:placeholder="$t('project.gantt.range')"
 						/>
 					</FormField>
+					<FormField :label="$t('project.gantt.size')">
+						<div class="select">
+							<select v-model="filters.scale">
+								<option value="day">
+									{{ $t('project.gantt.day') }}
+								</option>
+								<option value="week">
+									{{ $t('project.gantt.week') }}
+								</option>
+							</select>
+						</div>
+					</FormField>
 					<div
 						v-if="!hasDefaultFilters"
 						class="field"

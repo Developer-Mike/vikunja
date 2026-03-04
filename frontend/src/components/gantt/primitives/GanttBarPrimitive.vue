@@ -33,12 +33,16 @@ const props = withDefaults(
 		model: GanttBarModel
 		timelineStart: Date
 		timelineEnd: Date
+		keyboardStepDays?: number
+		applySteps?: (date: Date, steps: number) => Date
 		onDoubleClick?: (model: GanttBarModel) => void
 		onUpdate?: (id: string, newStart: Date, newEnd: Date) => void
 		as?: string
 	}>(),
 	{
 		as: 'g',
+		keyboardStepDays: 1,
+		applySteps: undefined,
 		onDoubleClick: undefined,
 		onUpdate: undefined,
 	},
@@ -59,6 +63,8 @@ const {
 	timelineStart: props.timelineStart,
 	timelineEnd: props.timelineEnd,
 	onUpdate: props.onUpdate,
+	keyboardStepDays: props.keyboardStepDays,
+	applySteps: props.applySteps,
 })
 const ariaMin = computed(() => props.timelineStart.valueOf())
 const ariaMax = computed(() => props.timelineEnd.valueOf())

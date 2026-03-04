@@ -9,9 +9,9 @@
 			<line
 				v-for="(date, index) in timelineData"
 				:key="date.toISOString()"
-				:x1="index * dayWidthPixels"
+				:x1="index * unitWidthPixels"
 				:y1="0"
-				:x2="index * dayWidthPixels"
+				:x2="index * unitWidthPixels"
 				:y2="height"
 				stroke="var(--grey-400)"
 				stroke-width="0.5"
@@ -22,11 +22,14 @@
 </template>
 
 <script setup lang="ts">
+import type {GanttScale} from '@/helpers/ganttScaleConfig'
+
 defineProps<{
 	timelineData: Date[]
 	totalWidth: number
 	height: number
-	dayWidthPixels: number
+	unitWidthPixels: number
+	scale: GanttScale
 }>()
 </script>
 

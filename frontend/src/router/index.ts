@@ -26,6 +26,11 @@ const router = createRouter({
 			return savedPosition
 		}
 
+		// Don't reset scroll when opening a modal/backdrop (e.g., task detail from gantt/kanban)
+		if (window.history.state?.backdropView) {
+			return false
+		}
+
 		// Scroll to anchor should still work
 		if (to.hash && !to.hash.startsWith(LINK_SHARE_HASH_PREFIX)) {
 			return {el: to.hash}

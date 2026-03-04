@@ -13,14 +13,16 @@
 		<div class="gantt-chart-wrapper">
 			<GanttTimelineHeader
 				:timeline-data="timelineData"
-				:day-width-pixels="DAY_WIDTH_PIXELS"
+				:unit-width-pixels="scaleConfig.unitWidthPixels"
+				:scale="filters.scale"
 			/>
 
 			<GanttVerticalGridLines
 				:timeline-data="timelineData"
 				:total-width="totalWidth"
 				:height="ganttRows.length * 40"
-				:day-width-pixels="DAY_WIDTH_PIXELS"
+				:unit-width-pixels="scaleConfig.unitWidthPixels"
+				:scale="filters.scale"
 			/>
 
 			<GanttChartBody
@@ -57,7 +59,7 @@
 										:total-width="totalWidth"
 										:date-from-date="dateFromDate"
 										:date-to-date="dateToDate"
-										:day-width-pixels="DAY_WIDTH_PIXELS"
+										:scale-config="scaleConfig"
 										:is-dragging="isDragging"
 										:is-resizing="isResizing"
 										:drag-state="dragState"
@@ -66,6 +68,7 @@
 										:row-id="rowId"
 										:is-parent="ganttBars[index]?.[0]?.meta?.isParent ?? false"
 										:is-collapsed="collapsedTaskIds.has(Number(ganttBars[index]?.[0]?.id))"
+										:keyboard-step-days="scaleConfig.keyboardSteps"
 										@barPointerDown="handleBarPointerDown"
 										@startResize="startResize"
 										@updateTask="updateGanttTask"
@@ -89,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import {computed, ref, watch, toRefs, onUnmounted} from 'vue'
+import {computed, ref, watch, toRefs, onUnmounted, nextTick} from 'vue'
 import {useRouter} from 'vue-router'
 import dayjs from 'dayjs'
 import {useDayjsLanguageSync} from '@/i18n/useDayjsLanguageSync'
@@ -111,8 +114,7 @@ import GanttTimelineHeader from '@/components/gantt/GanttTimelineHeader.vue'
 import GanttRelationArrows from '@/components/gantt/GanttRelationArrows.vue'
 import Loading from '@/components/misc/Loading.vue'
 
-import {MILLISECONDS_A_DAY} from '@/constants/date'
-import {roundToNaturalDayBoundary} from '@/helpers/time/roundToNaturalDayBoundary'
+import {GANTT_SCALE_CONFIGS} from '@/helpers/ganttScaleConfig'
 
 const props = defineProps<{
 	isLoading: boolean,
@@ -126,12 +128,12 @@ const emit = defineEmits<{
   (e: 'update:task', task: ITaskPartialWithId): void
 }>()
 
-const DAY_WIDTH_PIXELS = 30
-
 const {tasks, filters} = toRefs(props)
 
+const scaleConfig = computed(() => GANTT_SCALE_CONFIGS[filters.value.scale])
+
 const dayjsLanguageLoading = useDayjsLanguageSync(dayjs)
-const ganttContainer = ref(null)
+const ganttContainer = ref<HTMLDivElement | null>(null)
 const ganttChartBodyRef = ref<InstanceType<typeof GanttChartBody> | null>(null)
 const router = useRouter()
 
@@ -146,7 +148,7 @@ const dragState = ref<{
 	startX: number
 	originalStart: Date
 	originalEnd: Date
-	currentDays: number
+	currentSteps: number
 	edge?: 'start' | 'end'
 } | null>(null)
 
@@ -157,20 +159,11 @@ const dateFromDate = computed(() => dayjs(filters.value.dateFrom).startOf('day')
 const dateToDate = computed(() => dayjs(filters.value.dateTo).endOf('day').toDate())
 
 const totalWidth = computed(() => {
-	const dateDiff = Math.ceil((dateToDate.value.valueOf() - dateFromDate.value.valueOf()) / MILLISECONDS_A_DAY)
-	return dateDiff * DAY_WIDTH_PIXELS
+	return timelineData.value.length * scaleConfig.value.unitWidthPixels
 })
 
 const timelineData = computed(() => {
-	const dates: Date[] = []
-	const currentDate = new Date(dateFromDate.value)
-	
-	while (currentDate <= dateToDate.value) {
-		dates.push(new Date(currentDate))
-		currentDate.setDate(currentDate.getDate() + 1)
-	}
-	
-	return dates
+	return scaleConfig.value.getTimeUnits(dateFromDate.value, dateToDate.value)
 })
 
 const ganttBars = ref<GanttBarModel[][]>([])
@@ -239,8 +232,8 @@ function toggleCollapse(taskId: number) {
 	collapsedTaskIds.value = newSet
 }
 
-function getRoundedDate(value: string | Date | undefined, fallback: Date | string, isStart: boolean) {
-	return roundToNaturalDayBoundary(value ? new Date(value) : new Date(fallback), isStart)
+function getSnappedDate(value: string | Date | undefined, fallback: Date | string, isStart: boolean) {
+	return scaleConfig.value.snapDate(value ? new Date(value) : new Date(fallback), isStart)
 }
 
 function transformTaskToGanttBar(node: GanttTaskTreeNode): GanttBarModel {
@@ -256,24 +249,24 @@ function transformTaskToGanttBar(node: GanttTaskTreeNode): GanttBarModel {
 	let dateType: GanttBarDateType
 
 	if (effectiveStartDate && effectiveEndDate) {
-		startDate = getRoundedDate(effectiveStartDate, effectiveStartDate, true)
-		endDate = getRoundedDate(effectiveEndDate, effectiveEndDate, false)
+		startDate = getSnappedDate(effectiveStartDate, effectiveStartDate, true)
+		endDate = getSnappedDate(effectiveEndDate, effectiveEndDate, false)
 		dateType = 'both'
 	} else if (effectiveStartDate && !effectiveEndDate) {
-		startDate = getRoundedDate(effectiveStartDate, effectiveStartDate, true)
+		startDate = getSnappedDate(effectiveStartDate, effectiveStartDate, true)
 		const defaultEnd = new Date(startDate)
 		defaultEnd.setDate(defaultEnd.getDate() + DEFAULT_SPAN_DAYS)
-		endDate = getRoundedDate(defaultEnd, defaultEnd, false)
+		endDate = getSnappedDate(defaultEnd, defaultEnd, false)
 		dateType = 'startOnly'
 	} else if (!effectiveStartDate && effectiveEndDate) {
-		endDate = getRoundedDate(effectiveEndDate, effectiveEndDate, false)
+		endDate = getSnappedDate(effectiveEndDate, effectiveEndDate, false)
 		const defaultStart = new Date(endDate)
 		defaultStart.setDate(defaultStart.getDate() - DEFAULT_SPAN_DAYS)
-		startDate = getRoundedDate(defaultStart, defaultStart, true)
+		startDate = getSnappedDate(defaultStart, defaultStart, true)
 		dateType = 'endOnly'
 	} else {
-		startDate = getRoundedDate(undefined, props.defaultTaskStartDate, true)
-		endDate = getRoundedDate(undefined, props.defaultTaskEndDate, false)
+		startDate = getSnappedDate(undefined, props.defaultTaskStartDate, true)
+		endDate = getSnappedDate(undefined, props.defaultTaskEndDate, false)
 		dateType = 'both'
 	}
 
@@ -338,9 +331,18 @@ watch(
 			cells[rowId] = rowCells
 		})
 
+		// Preserve scroll position across the DOM update caused by replacing bars/rows/cells
+		const scrollLeft = ganttContainer.value?.scrollLeft ?? 0
+
 		ganttBars.value = bars.map(bar => [bar])
 		ganttRows.value = rows
 		cellsByRow.value = cells
+
+		nextTick(() => {
+			if (ganttContainer.value) {
+				ganttContainer.value.scrollLeft = scrollLeft
+			}
+		})
 	},
 	{deep: true, immediate: true},
 )
@@ -351,7 +353,7 @@ const ROW_HEIGHT = 40
 const barPositions = computed(() => {
 	const positions = new Map<number, GanttBarPosition>()
 	const ds = dragState.value
-	const dragPixelOffset = ds ? ds.currentDays * DAY_WIDTH_PIXELS : 0
+	const sc = scaleConfig.value
 
 	ganttBars.value.forEach((rowBars, rowIndex) => {
 		for (const bar of rowBars) {
@@ -361,7 +363,11 @@ const barPositions = computed(() => {
 			const y = rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2
 
 			// Apply drag/resize offset for the active bar
-			if (ds && bar.id === ds.barId && dragPixelOffset !== 0) {
+			if (ds && bar.id === ds.barId && ds.currentSteps !== 0) {
+				const shiftedStart = sc.applySteps(bar.start, ds.currentSteps)
+				const shiftedX = sc.dateToPixels(sc.snapDate(shiftedStart, true), dateFromDate.value)
+				const dragPixelOffset = shiftedX - x
+
 				if (isDragging.value) {
 					x += dragPixelOffset
 				} else if (isResizing.value) {
@@ -369,7 +375,10 @@ const barPositions = computed(() => {
 						x += dragPixelOffset
 						width -= dragPixelOffset
 					} else {
-						width += dragPixelOffset
+						const shiftedEnd = sc.applySteps(bar.end, ds.currentSteps)
+						const shiftedEndX = sc.dateToPixels(sc.snapDate(shiftedEnd), dateFromDate.value)
+						const endPixelOffset = shiftedEndX - (x + width)
+						width += endPixelOffset
 					}
 				}
 			}
@@ -382,19 +391,13 @@ const barPositions = computed(() => {
 })
 
 function computeBarX(date: Date): number {
-	const diff = Math.ceil(
-		(roundToNaturalDayBoundary(date, true).getTime() - dateFromDate.value.getTime()) /
-		MILLISECONDS_A_DAY,
-	)
-	return diff * DAY_WIDTH_PIXELS
+	return scaleConfig.value.dateToPixels(scaleConfig.value.snapDate(date, true), dateFromDate.value)
 }
 
 function computeBarWidth(bar: GanttBarModel): number {
-	const diff = Math.ceil(
-		(roundToNaturalDayBoundary(bar.end).getTime() - roundToNaturalDayBoundary(bar.start, true).getTime()) /
-		MILLISECONDS_A_DAY,
-	)
-	return diff * DAY_WIDTH_PIXELS
+	const startX = scaleConfig.value.dateToPixels(scaleConfig.value.snapDate(bar.start, true), dateFromDate.value)
+	const endX = scaleConfig.value.dateToPixels(scaleConfig.value.snapDate(bar.end), dateFromDate.value)
+	return endX - startX
 }
 
 // Compute relation arrows
@@ -459,6 +462,7 @@ function updateGanttTask(id: string, newStart: Date, newEnd: Date) {
 	const task = tasks.value.get(Number(id))
 	if (!task) return
 
+	const sc = scaleConfig.value
 	const update: ITaskPartialWithId = {
 		id: Number(id),
 	}
@@ -469,27 +473,27 @@ function updateGanttTask(id: string, newStart: Date, newEnd: Date) {
 
 	if (hasStartDate && hasEndDate) {
 		// Both dates exist — update both
-		update.startDate = roundToNaturalDayBoundary(newStart, true)
-		update.endDate = roundToNaturalDayBoundary(newEnd)
+		update.startDate = sc.snapDate(newStart, true)
+		update.endDate = sc.snapDate(newEnd)
 	} else if (hasStartDate && !hasEndDate && hasDueDate) {
 		// startDate + dueDate (no endDate) — treat as fully dated
-		update.startDate = roundToNaturalDayBoundary(newStart, true)
-		update.dueDate = roundToNaturalDayBoundary(newEnd)
+		update.startDate = sc.snapDate(newStart, true)
+		update.dueDate = sc.snapDate(newEnd)
 	} else if (hasStartDate && !hasEndDate) {
 		// startOnly — only update startDate, don't persist the synthetic end
-		update.startDate = roundToNaturalDayBoundary(newStart, true)
+		update.startDate = sc.snapDate(newStart, true)
 	} else if (!hasStartDate && (hasEndDate || hasDueDate)) {
 		// endOnly / dueOnly — only update the end side
 		if (hasEndDate) {
-			update.endDate = roundToNaturalDayBoundary(newEnd)
+			update.endDate = sc.snapDate(newEnd)
 		}
 		if (hasDueDate) {
-			update.dueDate = roundToNaturalDayBoundary(newEnd)
+			update.dueDate = sc.snapDate(newEnd)
 		}
 	} else {
 		// No dates at all — update both (existing behavior for dateless tasks)
-		update.startDate = roundToNaturalDayBoundary(newStart, true)
-		update.endDate = roundToNaturalDayBoundary(newEnd)
+		update.startDate = sc.snapDate(newStart, true)
+		update.endDate = sc.snapDate(newEnd)
 	}
 
 	emit('update:task', update)
@@ -579,21 +583,23 @@ function startDrag(bar: GanttBarModel, event: PointerEvent) {
 		startX: event.clientX,
 		originalStart: new Date(bar.start),
 		originalEnd: new Date(bar.end),
-		currentDays: 0,
+		currentSteps: 0,
 	}
 	
 	const barGroup = (event.target as Element).closest('g')
 	const barElement = barGroup?.querySelector('.gantt-bar')
 	setCursor('grabbing', barElement)
 	
+	const sc = scaleConfig.value
+	
 	const handleMove = (e: PointerEvent) => {
 		if (!dragState.value || !isDragging.value) return
 		
 		const diff = e.clientX - dragState.value.startX
-		const days = Math.round(diff / DAY_WIDTH_PIXELS)
+		const steps = sc.pixelsToSteps(diff)
 		
-		if (days !== dragState.value.currentDays) {
-			dragState.value.currentDays = days
+		if (steps !== dragState.value.currentSteps) {
+			dragState.value.currentSteps = steps
 		}
 	}
 	
@@ -609,11 +615,9 @@ function startDrag(bar: GanttBarModel, event: PointerEvent) {
 		
 		clearCursor(barElement)
 		
-		if (dragState.value && dragState.value.currentDays !== 0) {
-			const newStart = new Date(dragState.value.originalStart)
-			newStart.setDate(newStart.getDate() + dragState.value.currentDays)
-			const newEnd = new Date(dragState.value.originalEnd)
-			newEnd.setDate(newEnd.getDate() + dragState.value.currentDays)
+		if (dragState.value && dragState.value.currentSteps !== 0) {
+			const newStart = sc.applySteps(dragState.value.originalStart, dragState.value.currentSteps)
+			const newEnd = sc.applySteps(dragState.value.originalEnd, dragState.value.currentSteps)
 			
 			updateGanttTask(bar.id, newStart, newEnd)
 		}
@@ -640,7 +644,7 @@ function startResize(bar: GanttBarModel, edge: 'start' | 'end', event: PointerEv
 		startX: event.clientX,
 		originalStart: new Date(bar.start),
 		originalEnd: new Date(bar.end),
-		currentDays: 0,
+		currentSteps: 0,
 		edge,
 	}
 	
@@ -648,24 +652,24 @@ function startResize(bar: GanttBarModel, edge: 'start' | 'end', event: PointerEv
 	const barElement = barGroup?.querySelector('.gantt-bar')
 	setCursor('col-resize', barElement)
 	
+	const sc = scaleConfig.value
+	
 	const handleMove = (e: PointerEvent) => {
 		if (!dragState.value || !isResizing.value) return
 		
 		const diff = e.clientX - dragState.value.startX
-		const days = Math.round(diff / DAY_WIDTH_PIXELS)
+		const steps = sc.pixelsToSteps(diff)
 		
 		if (edge === 'start') {
-			const newStart = new Date(dragState.value.originalStart)
-			newStart.setDate(newStart.getDate() + days)
+			const newStart = sc.applySteps(dragState.value.originalStart, steps)
 			if (newStart >= dragState.value.originalEnd) return
 		} else {
-			const newEnd = new Date(dragState.value.originalEnd)
-			newEnd.setDate(newEnd.getDate() + days)
+			const newEnd = sc.applySteps(dragState.value.originalEnd, steps)
 			if (newEnd <= dragState.value.originalStart) return
 		}
 		
-		if (days !== dragState.value.currentDays) {
-			dragState.value.currentDays = days
+		if (steps !== dragState.value.currentSteps) {
+			dragState.value.currentSteps = steps
 		}
 	}
 	
@@ -681,18 +685,16 @@ function startResize(bar: GanttBarModel, edge: 'start' | 'end', event: PointerEv
 		
 		clearCursor(barElement)
 		
-		if (dragState.value && dragState.value.currentDays !== 0) {
+		if (dragState.value && dragState.value.currentSteps !== 0) {
 			if (edge === 'start') {
-				const newStart = new Date(dragState.value.originalStart)
-				newStart.setDate(newStart.getDate() + dragState.value.currentDays)
+				const newStart = sc.applySteps(dragState.value.originalStart, dragState.value.currentSteps)
 				
 				// Ensure start doesn't go past end
 				if (newStart < dragState.value.originalEnd) {
 					updateGanttTask(bar.id, newStart, dragState.value.originalEnd)
 				}
 			} else {
-				const newEnd = new Date(dragState.value.originalEnd)
-				newEnd.setDate(newEnd.getDate() + dragState.value.currentDays)
+				const newEnd = sc.applySteps(dragState.value.originalEnd, dragState.value.currentSteps)
 				
 				// Ensure end doesn't go before start
 				if (newEnd > dragState.value.originalStart) {
@@ -730,7 +732,7 @@ function focusTaskBar(rowId: string) {
 	setTimeout(() => {
 		const taskBarElement = document.querySelector(`[data-row-id="${rowId}"] [role="slider"]`) as HTMLElement
 		if (taskBarElement) {
-			taskBarElement.focus()
+			taskBarElement.focus({preventScroll: true})
 		}
 	}, 0)
 }

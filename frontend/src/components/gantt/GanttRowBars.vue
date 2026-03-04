@@ -14,6 +14,8 @@
 			:model="bar"
 			:timeline-start="dateFromDate"
 			:timeline-end="dateToDate"
+			:keyboard-step-days="keyboardStepDays"
+			:apply-steps="scaleConfig.applySteps"
 			:on-update="(id, start, end) => emit('updateTask', id, start, end)"
 		>
 			<!-- Gradient definitions for partial-date bars -->
@@ -207,13 +209,11 @@
 
 <script setup lang="ts">
 import {computed} from 'vue'
-import dayjs from 'dayjs'
 import {useI18n} from 'vue-i18n'
 
 import type {GanttBarModel} from '@/composables/useGanttBar'
 import {getTextColor, LIGHT} from '@/helpers/color/getTextColor'
-import {MILLISECONDS_A_DAY} from '@/constants/date'
-import {roundToNaturalDayBoundary} from '@/helpers/time/roundToNaturalDayBoundary'
+import type {GanttScaleConfig} from '@/helpers/ganttScaleConfig'
 
 import GanttBarPrimitive from './primitives/GanttBarPrimitive.vue'
 
@@ -222,7 +222,7 @@ const props = defineProps<{
 	totalWidth: number
 	dateFromDate: Date
 	dateToDate: Date
-	dayWidthPixels: number
+	scaleConfig: GanttScaleConfig
 	isDragging: boolean
 	isResizing: boolean
 	dragState: {
@@ -230,7 +230,7 @@ const props = defineProps<{
 		startX: number
 		originalStart: Date
 		originalEnd: Date
-		currentDays: number
+		currentSteps: number
 		edge?: 'start' | 'end'
 	} | null
 	focusedRow: string | null
@@ -238,6 +238,7 @@ const props = defineProps<{
 	rowId: string
 	isParent: boolean
 	isCollapsed: boolean
+	keyboardStepDays: number
 }>()
 
 const emit = defineEmits<{
@@ -251,32 +252,22 @@ const {t} = useI18n({useScope: 'global'})
 
 const RESIZE_HANDLE_OFFSET = 3
 
-function addDays(dateOrValue: Date | string | number, days: number): Date {
-	const date = new Date(dateOrValue)
-	const newDate = new Date(date)
-	newDate.setDate(newDate.getDate() + days)
-	return newDate
-}
-
 const isRowFocused = computed(() => props.focusedRow === props.rowId)
 
 function computeBarX(startDate: Date) {
-	const daysDiff = dayjs(startDate).diff(dayjs(props.dateFromDate), 'day')
-	const x = daysDiff * props.dayWidthPixels
-	return x
-}
-
-function getDaysDifference(startDate: Date, endDate: Date): number {
-	return Math.ceil(
-		(roundToNaturalDayBoundary(endDate).getTime() - roundToNaturalDayBoundary(startDate, true).getTime()) /
-MILLISECONDS_A_DAY,
-	)
+	return props.scaleConfig.dateToPixels(startDate, props.dateFromDate)
 }
 
 function computeBarWidth(bar: GanttBarModel) {
-	const diff = getDaysDifference(bar.start, bar.end)
-	const width = diff * props.dayWidthPixels
-	return width
+	const startX = props.scaleConfig.dateToPixels(
+		props.scaleConfig.snapDate(bar.start, true),
+		props.dateFromDate,
+	)
+	const endX = props.scaleConfig.dateToPixels(
+		props.scaleConfig.snapDate(bar.end),
+		props.dateFromDate,
+	)
+	return Math.max(0, endX - startX)
 }
 
 const originalEndX = computed(() => props.dragState?.originalEnd 
@@ -288,12 +279,12 @@ const originalStartX = computed(() => props.dragState?.originalStart
 
 const getBarX = computed(() => (bar: GanttBarModel) => {
 	if (props.isDragging && props.dragState?.barId === bar.id) {
-		const offset = props.dragState.currentDays * props.dayWidthPixels
-		return originalStartX.value + offset
+		const shiftedStart = props.scaleConfig.applySteps(props.dragState.originalStart, props.dragState.currentSteps)
+		return computeBarX(shiftedStart)
 	}
 
 	if (props.isResizing && props.dragState?.barId === bar.id && props.dragState.edge === 'start') {
-		const newStart = addDays(props.dragState.originalStart, props.dragState.currentDays)
+		const newStart = props.scaleConfig.applySteps(props.dragState.originalStart, props.dragState.currentSteps)
 		return computeBarX(newStart)
 	}
 	return computeBarX(bar.start)
@@ -302,11 +293,11 @@ const getBarX = computed(() => (bar: GanttBarModel) => {
 const getBarWidth = computed(() => (bar: GanttBarModel) => {
 	if (props.isResizing && props.dragState?.barId === bar.id) {
 		if (props.dragState.edge === 'start') {
-			const newStart = addDays(props.dragState.originalStart, props.dragState.currentDays)
+			const newStart = props.scaleConfig.applySteps(props.dragState.originalStart, props.dragState.currentSteps)
 			const newStartX = computeBarX(newStart)
 			return Math.max(0, originalEndX.value - newStartX)
 		} else {
-			const newEnd = addDays(props.dragState.originalEnd, props.dragState.currentDays)
+			const newEnd = props.scaleConfig.applySteps(props.dragState.originalEnd, props.dragState.currentSteps)
 			const newEndX = computeBarX(newEnd)
 			return Math.max(0, newEndX - originalStartX.value)
 		}

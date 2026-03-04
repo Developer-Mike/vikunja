@@ -4,57 +4,103 @@
 		role="columnheader"
 		:aria-label="$t('project.gantt.timelineHeader')"
 	>
-		<!-- Upper timeunit for months -->
-		<div
-			class="gantt-timeline-months"
-			role="row"
-			:aria-label="$t('project.gantt.monthsRow')"
-		>
+		<!-- Day scale: Day row (upper) + Hour row (lower) -->
+		<template v-if="scale === 'day'">
 			<div
-				v-for="monthGroup in monthGroups"
-				:key="monthGroup.key"
-				class="timeunit-month"
-				:style="{ width: `${monthGroup.width}px` }"
-				role="columnheader"
-				:aria-label="$t('project.gantt.monthLabel', {month: monthGroup.label})"
-			>
-				{{ monthGroup.label }}
-			</div>
-		</div>
-        
-		<!-- Lower timeunit for days -->
-		<div
-			class="gantt-timeline-days"
-			role="row"
-			:aria-label="$t('project.gantt.daysRow')"
-		>
-			<div
-				v-for="date in timelineData"
-				:key="date.toISOString()"
-				class="timeunit"
-				:style="{ width: `${dayWidthPixels}px` }"
-				role="columnheader"
-				:aria-label="dateIsToday(date) 
-					? $t('project.gantt.dayLabelToday', {
-						date: date.toLocaleDateString(),
-						weekday: weekDayFromDate(date)
-					})
-					: $t('project.gantt.dayLabel', {
-						date: date.toLocaleDateString(),
-						weekday: weekDayFromDate(date)
-					})"
+				class="gantt-timeline-upper"
+				role="row"
+				:aria-label="$t('project.gantt.daysRow')"
 			>
 				<div
-					class="timeunit-wrapper"
-					:class="{'today': dateIsToday(date)}"
+					v-for="group in dayScaleDayGroups"
+					:key="group.key"
+					class="timeunit-upper"
+					:style="{ width: `${group.width}px` }"
+					role="columnheader"
+					:aria-label="$t('project.gantt.dayLabel', {
+						date: group.date.toLocaleDateString(),
+						weekday: weekDayFromDate(group.date),
+					})"
 				>
-					<span>{{ date.getDate() }}</span>
-					<span class="weekday">
-						{{ weekDayFromDate(date) }}
-					</span>
+					{{ group.label }}
 				</div>
 			</div>
-		</div>
+			<div
+				class="gantt-timeline-lower"
+				role="row"
+				:aria-label="$t('project.gantt.hoursRow')"
+			>
+				<div
+					v-for="date in timelineData"
+					:key="date.toISOString()"
+					class="timeunit"
+					:style="{ width: `${unitWidthPixels}px` }"
+					role="columnheader"
+					:aria-label="hourIsNow(date)
+						? $t('project.gantt.hourLabelNow', { hour: formatHour(date) })
+						: $t('project.gantt.hourLabel', { hour: formatHour(date) })"
+				>
+					<div
+						class="timeunit-wrapper"
+						:class="{'today': hourIsNow(date)}"
+					>
+						<span class="hour-label">{{ formatHour(date) }}</span>
+					</div>
+				</div>
+			</div>
+		</template>
+
+		<!-- Week scale: Month row (upper) + Day row (lower) -->
+		<template v-else>
+			<div
+				class="gantt-timeline-upper"
+				role="row"
+				:aria-label="$t('project.gantt.monthsRow')"
+			>
+				<div
+					v-for="group in weekScaleMonthGroups"
+					:key="group.key"
+					class="timeunit-upper"
+					:style="{ width: `${group.width}px` }"
+					role="columnheader"
+					:aria-label="$t('project.gantt.monthLabel', {month: group.label})"
+				>
+					{{ group.label }}
+				</div>
+			</div>
+			<div
+				class="gantt-timeline-lower"
+				role="row"
+				:aria-label="$t('project.gantt.daysRow')"
+			>
+				<div
+					v-for="date in timelineData"
+					:key="date.toISOString()"
+					class="timeunit"
+					:style="{ width: `${unitWidthPixels}px` }"
+					role="columnheader"
+					:aria-label="dateIsToday(date)
+						? $t('project.gantt.dayLabelToday', {
+							date: date.toLocaleDateString(),
+							weekday: weekDayFromDate(date),
+						})
+						: $t('project.gantt.dayLabel', {
+							date: date.toLocaleDateString(),
+							weekday: weekDayFromDate(date),
+						})"
+				>
+					<div
+						class="timeunit-wrapper"
+						:class="{'today': dateIsToday(date)}"
+					>
+						<span>{{ date.getDate() }}</span>
+						<span class="weekday">
+							{{ weekDayFromDate(date) }}
+						</span>
+					</div>
+				</div>
+			</div>
+		</template>
 	</div>
 </template>
 
@@ -63,22 +109,66 @@ import {computed} from 'vue'
 import {useGlobalNow} from '@/composables/useGlobalNow'
 import {useWeekDayFromDate} from '@/helpers/time/formatDate'
 import dayjs from 'dayjs'
+import type {GanttScale} from '@/helpers/ganttScaleConfig'
 
 const props = defineProps<{
-    timelineData: Date[]
-    dayWidthPixels: number
+	timelineData: Date[]
+	unitWidthPixels: number
+	scale: GanttScale
 }>()
 
 const weekDayFromDate = useWeekDayFromDate()
-const { now: today } = useGlobalNow()
+const {now: today} = useGlobalNow()
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 const dateIsToday = computed(() => {
 	const todayStr = today.value.toDateString()
 	return (date: Date) => date.toDateString() === todayStr
 })
 
-const monthGroups = computed(() => {
-	const groups = props.timelineData.reduce(
+const hourIsNow = computed(() => {
+	const t = today.value
+	return (date: Date) =>
+		date.getFullYear() === t.getFullYear()
+		&& date.getMonth() === t.getMonth()
+		&& date.getDate() === t.getDate()
+		&& date.getHours() === t.getHours()
+})
+
+function formatHour(date: Date): string {
+	return `${date.getHours()}:00`
+}
+
+// ── Day scale: group hours by day ────────────────────────────────────────────
+
+const dayScaleDayGroups = computed(() => {
+	return props.timelineData.reduce(
+		(groups, date) => {
+			const key = date.toDateString()
+
+			const lastGroup = groups[groups.length - 1]
+			if (lastGroup?.key === key) {
+				lastGroup.width += props.unitWidthPixels
+			} else {
+				groups.push({
+					key,
+					label: dayjs(date).format('ddd, D MMM YYYY'),
+					date: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+					width: props.unitWidthPixels,
+				})
+			}
+
+			return groups
+		},
+		[] as Array<{key: string; label: string; date: Date; width: number}>,
+	)
+})
+
+// ── Week scale: group days by month ──────────────────────────────────────────
+
+const weekScaleMonthGroups = computed(() => {
+	return props.timelineData.reduce(
 		(groups, date) => {
 			const month = date.getMonth()
 			const year = date.getFullYear()
@@ -86,12 +176,12 @@ const monthGroups = computed(() => {
 
 			const lastGroup = groups[groups.length - 1]
 			if (lastGroup?.key === key) {
-				lastGroup.width += props.dayWidthPixels
+				lastGroup.width += props.unitWidthPixels
 			} else {
 				groups.push({
 					key,
 					label: dayjs(date).format('MMMM YYYY'),
-					width: props.dayWidthPixels,
+					width: props.unitWidthPixels,
 				})
 			}
 
@@ -99,9 +189,8 @@ const monthGroups = computed(() => {
 		},
 		[] as Array<{key: string; label: string; width: number}>,
 	)
-
-	return groups
 })
+
 </script>
 
 <style scoped lang="scss">
@@ -113,10 +202,10 @@ const monthGroups = computed(() => {
 	z-index: 10;
 }
 
-.gantt-timeline-months {
+.gantt-timeline-upper {
 	display: flex;
 
-	.timeunit-month {
+	.timeunit-upper {
 		background: var(--white);
 		font-family: $vikunja-font;
 		font-weight: bold;
@@ -128,7 +217,7 @@ const monthGroups = computed(() => {
 	}
 }
 
-.gantt-timeline-days {
+.gantt-timeline-lower {
 	display: flex;
 
 	.timeunit {
@@ -150,6 +239,10 @@ const monthGroups = computed(() => {
 
 			.weekday {
 				font-size: 0.8rem;
+			}
+
+			.hour-label {
+				font-size: 0.75rem;
 			}
 		}
 	}
